@@ -67,7 +67,7 @@ function setStep(n) {
 }
 
 function hideAllSections() {
-  ['secUpload', 'secChoice', 'secEditor', 'secPreviewStep', 'secMini', 'secPayment', 'secSuccess'].forEach(hide);
+  ['secUpload', 'secChoice', 'secEditor', 'secPreviewStep', 'secMini', 'secPayment', 'secUpi', 'secSuccess'].forEach(hide);
 }
 
 function paperRatio() {

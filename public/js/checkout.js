@@ -22,30 +22,59 @@ function changeCopies(delta) {
   updatePriceSummary();
 }
 
+function syncPayMethodButtons() {
+  const map = { counter: 'pmCounter', online: 'pmOnline', upi: 'pmUpi' };
+  Object.keys(map).forEach((m) => {
+    const el = document.getElementById(map[m]);
+    if (el) el.classList.toggle('sel', S.payMethod === m);
+  });
+}
+
 function selectPayMethod(method) {
-  S.payMethod = method === 'online' ? 'online' : 'counter';
-  document.getElementById('pmCounter').classList.toggle('sel', S.payMethod === 'counter');
-  document.getElementById('pmOnline').classList.toggle('sel', S.payMethod === 'online');
+  const upi = (S.paymentConfig && S.paymentConfig.upi) || {};
+  if (method === 'upi' && !upi.enabled) {
+    toast('UPI option band hai — server par UPI_VPA set karo.');
+    return;
+  }
+  S.payMethod = ['counter', 'online', 'upi'].indexOf(method) >= 0 ? method : 'counter';
+  syncPayMethodButtons();
   updatePayNote();
 }
 
 function updatePayNote() {
   const cfg = S.paymentConfig || {};
   const note = document.getElementById('payNote');
-  if (cfg.provider === 'demo') {
+  if (S.payMethod === 'upi') {
+    note.textContent = '📱 UPI QR generate hoga — kisi bhi UPI app se scan karke pay karo.';
+  } else if (cfg.provider === 'demo') {
     note.textContent = 'Demo payment mode — asli payments ke liye .env me Razorpay/Cashfree keys daalo.';
   } else if (cfg.provider === 'razorpay') {
     note.textContent = '🔒 Razorpay se secure payment · ' + (cfg.mode === 'test' ? 'Test mode' : 'Live mode');
   } else {
     note.textContent = '🔒 Cashfree se secure payment · ' + (cfg.mode === 'test' ? 'Test mode' : 'Live mode');
   }
-  const counterBtn = document.getElementById('pmCounter');
+
   const mode = (S.shop && S.shop.payment_mode) || 'both';
-  counterBtn.disabled = mode === 'online_only';
-  if (mode === 'online_only' && S.payMethod === 'counter') selectPayMethod('online');
-  if (mode === 'counter_only') {
-    document.getElementById('pmOnline').disabled = true;
-    if (S.payMethod !== 'counter') selectPayMethod('counter');
+  const counterBtn = document.getElementById('pmCounter');
+  const onlineBtn = document.getElementById('pmOnline');
+  const upiBtn = document.getElementById('pmUpi');
+  const upiEnabled = !!(cfg.upi && cfg.upi.enabled);
+
+  if (counterBtn) counterBtn.disabled = mode === 'online_only';
+  if (onlineBtn) onlineBtn.disabled = mode === 'counter_only';
+  if (upiBtn) upiBtn.disabled = mode === 'counter_only' || !upiEnabled;
+
+  if (mode === 'online_only' && S.payMethod === 'counter') {
+    S.payMethod = 'online';
+    syncPayMethodButtons();
+  }
+  if (mode === 'counter_only' && S.payMethod !== 'counter') {
+    S.payMethod = 'counter';
+    syncPayMethodButtons();
+  }
+  if (!upiEnabled && S.payMethod === 'upi') {
+    S.payMethod = mode === 'counter_only' ? 'counter' : 'online';
+    syncPayMethodButtons();
   }
 }
 
@@ -104,6 +133,8 @@ async function confirmAndPay() {
     if (S.payMethod === 'counter') {
       await api('/api/payment/counter', { method: 'POST', body: { jobId: S.job.jobId } });
       showSuccess('counter');
+    } else if (S.payMethod === 'upi') {
+      showUpiPayment();
     } else {
       await startOnlinePayment();
     }
@@ -155,25 +186,125 @@ async function startOnlinePayment() {
   }
 }
 
+/* ── UPI Scan & Pay ───────────────────────────────────────────── */
+function upiConfig() {
+  return (S.paymentConfig && S.paymentConfig.upi) || { vpa: '', name: 'Shop', enabled: false };
+}
+
+function upiUri(amount) {
+  const c = upiConfig();
+  const vpa = c.vpa || 'demo@upi';
+  const note = ('Order ' + (S.orderNo || '') + ' - QR Se Print').slice(0, 60);
+  const params = new URLSearchParams();
+  params.set('pa', vpa);
+  params.set('pn', String(c.name || 'Shop').slice(0, 40));
+  params.set('am', Number(amount || 0).toFixed(2));
+  params.set('cu', 'INR');
+  params.set('tn', note);
+  return 'upi://pay?' + params.toString();
+}
+
+function renderUpiQr(elId, amount, size) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = '';
+  if (!window.QRCode) { el.textContent = 'QR library nahi mila'; return; }
+  try {
+    const s = size || 220;
+    new window.QRCode(el, {
+      text: upiUri(amount), width: s, height: s,
+      colorDark: '#15151f', colorLight: '#ffffff',
+      correctLevel: window.QRCode.CorrectLevel.M
+    });
+  } catch (e) { el.textContent = 'QR ban nahi saka'; }
+}
+
+function showUpiPayment() {
+  hideAllSections();
+  show('secUpi');
+  const c = upiConfig();
+  const amount = (S.job && S.job.amount) || currentTotal();
+  document.getElementById('upiOrderNo').textContent = S.orderNo || '—';
+  document.getElementById('upiAmount').textContent = money(amount);
+  document.getElementById('upiVpa').textContent = c.vpa || 'demo@upi';
+  document.getElementById('upiHint').textContent = c.enabled
+    ? 'Payment hone ke baad "Maine Pay Kar Diya" dabao — shop verify karke print karega.'
+    : 'Demo UPI ID dikh raha hai. Live ke liye server par UPI_VPA set karo.';
+  document.getElementById('upiUtr').value = '';
+  const btn = document.getElementById('upiPaidBtn');
+  btn.disabled = false;
+  btn.textContent = '✅ Maine Pay Kar Diya';
+  renderUpiQr('upiQr', amount, 220);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function copyUpiId() {
+  const vpa = upiConfig().vpa || 'demo@upi';
+  try {
+    await navigator.clipboard.writeText(vpa);
+    toast('UPI ID copy ho gaya');
+  } catch (e) {
+    toast('UPI ID: ' + vpa);
+  }
+}
+
+async function confirmUpiPaid() {
+  if (S.busy || !S.job) return;
+  const btn = document.getElementById('upiPaidBtn');
+  S.busy = true;
+  btn.disabled = true;
+  btn.textContent = 'Confirm kar rahe hain…';
+  try {
+    await api('/api/payment/upi/confirm', {
+      method: 'POST',
+      body: { jobId: S.job.jobId, utr: document.getElementById('upiUtr').value || '' }
+    });
+    showSuccess('upi');
+  } catch (e) {
+    toast(e.message || 'UPI confirm nahi hua');
+    btn.disabled = false;
+    btn.textContent = '✅ Maine Pay Kar Diya';
+  } finally {
+    S.busy = false;
+  }
+}
+
 function showSuccess(method) {
   hideAllSections();
   document.getElementById('upProgWrap').style.display = 'none';
   show('secSuccess');
   setStep(4);
+  const pending = method === 'counter' || method === 'upi';
   const icon = document.getElementById('successIcon');
-  icon.className = 'sicon' + (method === 'counter' ? ' counter' : '');
-  icon.textContent = method === 'counter' ? '₹' : '✓';
-  document.getElementById('successTitle').textContent = method === 'counter' ? 'Order Confirm!' : 'Print Shuru!';
+  icon.className = 'sicon' + (pending ? ' counter' : '');
+  icon.textContent = method === 'counter' ? '₹' : method === 'upi' ? '📱' : '✓';
+  document.getElementById('successTitle').textContent =
+    method === 'counter' ? 'Order Confirm!' : method === 'upi' ? 'Payment Pending!' : 'Print Shuru!';
   document.getElementById('orderId').textContent = 'ORDER #' + S.orderNo;
   document.getElementById('ordNoBox').style.display = 'block';
   document.getElementById('ordNoNum').textContent = S.orderNo;
   const box = document.getElementById('collectBox');
-  box.className = 'collect-box' + (method === 'counter' ? ' counter' : '');
-  document.getElementById('collectTitle').textContent = method === 'counter' ? '💵 Counter par Pay karo' : '🖨️ Print Ho Raha Hai!';
-  document.getElementById('collectMsg').textContent = method === 'counter'
-    ? 'Shop par jaa kar ' + S.orderNo + ' number batao aur ' + money(S.job.amount) + ' do.'
-    : 'Aapka document print ho raha hai.' + (method === 'demo' ? ' (Demo payment mode)' : '');
+  box.className = 'collect-box' + (pending ? ' counter' : '');
+  document.getElementById('collectTitle').textContent =
+    method === 'counter' ? '💵 Counter par Pay karo'
+      : method === 'upi' ? '📱 UPI Payment Verify Hoga'
+        : '🖨️ Print Ho Raha Hai!';
+  document.getElementById('collectMsg').textContent =
+    method === 'counter'
+      ? 'Shop par jaa kar ' + S.orderNo + ' number batao aur ' + money(S.job.amount) + ' do.'
+      : method === 'upi'
+        ? 'Shop aapka UPI payment verify karke order ' + S.orderNo + ' print karega.'
+        : 'Aapka document print ho raha hai.' + (method === 'demo' ? ' (Demo payment mode)' : '');
   document.getElementById('finalAmount').textContent = money(S.job.amount);
+
+  const upiBox = document.getElementById('upiSuccessBox');
+  if (method === 'upi') {
+    upiBox.classList.remove('hidden');
+    document.getElementById('upiSuccessVpa').textContent = upiConfig().vpa || 'demo@upi';
+    renderUpiQr('upiSuccessQr', S.job.amount, 92);
+  } else {
+    upiBox.classList.add('hidden');
+  }
   document.getElementById('dlBox').style.display = 'none';
   document.getElementById('fbThanks').style.display = 'none';
   window.scrollTo({ top: 0, behavior: 'smooth' });

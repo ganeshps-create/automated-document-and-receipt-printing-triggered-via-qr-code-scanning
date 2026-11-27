@@ -6,7 +6,7 @@ const path = require('path');
 const config = require('./config');
 const db = require('./db');
 const payments = require('./payments');
-const { sendJson, readJson, readBody, serveStatic, safeName, hmac, money, randomId } = require('./util');
+const { sendJson, readJson, readBody, serveStatic, safeName, hmac, safeEqual, money, randomId, MIME } = require('./util');
 
 const MAX_BODY = config.limits.maxTotal + 1024 * 1024;
 
@@ -44,9 +44,36 @@ function uploadToken(uploadId, shopId, expires) {
   return hmac(config.uploadSecret, `${uploadId}|${shopId}|${expires}`);
 }
 
+function publicUpi() {
+  return {
+    vpa: config.upi.vpa,
+    name: config.upi.name,
+    enabled: config.upi.enabled
+  };
+}
+
+function adminToken(expires) {
+  return String(expires) + '.' + hmac(config.admin.secret, String(expires));
+}
+
+function verifyAdmin(req) {
+  const header = String(req.headers.authorization || '');
+  const m = header.match(/^Bearer\s+(.+)$/i);
+  if (!m) return false;
+  const parts = m[1].split('.');
+  if (parts.length !== 2) return false;
+  const expires = Number(parts[0]);
+  if (!Number.isFinite(expires) || expires < Date.now()) return false;
+  return safeEqual(parts[1], hmac(config.admin.secret, parts[0]));
+}
+
 async function handleApi(req, res, url) {
   const p = url.pathname;
   const method = req.method;
+
+  if (p.startsWith('/api/admin/') && p !== '/api/admin/login' && !verifyAdmin(req)) {
+    return sendJson(res, 401, { error: 'Admin login required' });
+  }
 
   if (p === '/api/health' && method === 'GET') {
     return sendJson(res, 200, { ok: true, provider: config.payment.provider, mode: config.payment.mode });
@@ -58,6 +85,7 @@ async function handleApi(req, res, url) {
       mode: config.payment.mode,
       razorpayKeyId: config.payment.razorpay.keyId,
       cashfreeAppId: config.payment.cashfree.appId,
+      upi: publicUpi(),
       maxFile: config.limits.maxFile,
       maxTotal: config.limits.maxTotal
     });
@@ -259,6 +287,22 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, orderNo: job.orderNo, amount: job.amount, status: 'paid' });
   }
 
+  if (p === '/api/payment/upi/confirm' && method === 'POST') {
+    const body = await readJson(req);
+    const job = db.getTable('jobs', String(body.jobId || ''));
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    if (job.status !== 'awaiting_payment') return sendJson(res, 400, { error: 'Job already confirmed' });
+    job.status = 'upi_pending';
+    job.utr = String(body.utr || '').slice(0, 80);
+    job.updated = Date.now();
+    db.putTable('jobs', job.id, job);
+    db.putTable('payments', 'upi_' + job.id, {
+      jobId: job.id, provider: 'upi', amount: job.amount, status: 'pending',
+      utr: job.utr, created: Date.now()
+    });
+    return sendJson(res, 200, { ok: true, orderNo: job.orderNo, amount: job.amount, status: job.status });
+  }
+
   if (p === '/api/payment/counter' && method === 'POST') {
     const body = await readJson(req);
     const job = db.getTable('jobs', String(body.jobId || ''));
@@ -267,6 +311,80 @@ async function handleApi(req, res, url) {
     db.putTable('jobs', job.id, job);
     db.putTable('payments', 'counter_' + job.id, { jobId: job.id, provider: 'counter', amount: job.amount, status: 'pending', created: Date.now() });
     return sendJson(res, 200, { ok: true, orderNo: job.orderNo, amount: job.amount, status: job.status });
+  }
+
+  /* ── Shop admin: login, print queue, file access, status ───────── */
+  if (p === '/api/admin/login' && method === 'POST') {
+    const body = await readJson(req);
+    if (!safeEqual(String(body.password || ''), config.admin.password)) {
+      return sendJson(res, 401, { error: 'Galat password' });
+    }
+    const expires = Date.now() + 8 * 60 * 60 * 1000;
+    return sendJson(res, 200, {
+      token: adminToken(expires),
+      expires,
+      shopName: config.shopSeed.name,
+      upi: publicUpi()
+    });
+  }
+
+  if (p === '/api/admin/jobs' && method === 'GET') {
+    const jobs = Object.values(db.get().jobs)
+      .sort((a, b) => (Number(b.created) || 0) - (Number(a.created) || 0))
+      .map((j) => ({
+        id: j.id,
+        jobId: j.id,
+        orderNo: j.orderNo,
+        status: j.status,
+        amount: j.amount,
+        pages: j.pages,
+        copies: j.copies,
+        colorMode: j.colorMode,
+        duplex: j.duplex,
+        mini: j.mini || null,
+        pageRange: j.pageRange || 'all',
+        utr: j.utr || '',
+        created: j.created || 0,
+        files: (j.files || []).map((f) => ({ name: f.name, size: f.size }))
+      }));
+    return sendJson(res, 200, { jobs, upi: publicUpi(), shopName: config.shopSeed.name });
+  }
+
+  let am;
+  if ((am = p.match(/^\/api\/admin\/jobs\/([^/]+)\/file$/)) && method === 'GET') {
+    const job = db.getTable('jobs', am[1]);
+    if (!job || !job.files || !job.files.length) return sendJson(res, 404, { error: 'File nahi mila' });
+    const rel = String(job.files[0].path || '');
+    const root = path.resolve(config.dataDir);
+    const file = path.resolve(root, rel);
+    if (!file.startsWith(root + path.sep)) return sendJson(res, 403, { error: 'Forbidden' });
+    if (!fs.existsSync(file)) return sendJson(res, 404, { error: 'File disk par nahi hai' });
+    const ext = path.extname(file).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Content-Disposition': 'inline; filename="' + safeName(job.files[0].name) + '"',
+      'Cache-Control': 'no-store'
+    });
+    fs.createReadStream(file).pipe(res);
+    return;
+  }
+
+  if ((am = p.match(/^\/api\/admin\/jobs\/([^/]+)\/status$/)) && method === 'POST') {
+    const job = db.getTable('jobs', am[1]);
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    const body = await readJson(req);
+    const allowed = ['awaiting_payment', 'counter_pending', 'upi_pending', 'paid', 'printed', 'cancelled'];
+    const status = String(body.status || '');
+    if (!allowed.includes(status)) return sendJson(res, 400, { error: 'Invalid status' });
+    job.status = status;
+    job.updated = Date.now();
+    db.putTable('jobs', job.id, job);
+    const payment = db.getTable('payments', 'upi_' + job.id);
+    if (payment && (status === 'paid' || status === 'printed')) {
+      payment.status = 'paid';
+      db.putTable('payments', 'upi_' + job.id, payment);
+    }
+    return sendJson(res, 200, { ok: true, status: job.status });
   }
 
   return sendJson(res, 404, { error: 'Not found' });
@@ -294,6 +412,9 @@ function methodAllowsBody(m) { return m === 'POST' || m === 'PUT' || m === 'PATC
 server.listen(config.port, () => {
   console.log(`QR Se Print replica running at ${config.publicUrl}`);
   console.log(`Payment provider: ${config.payment.provider} (${config.payment.mode})`);
+  if (config.admin.defaultPassword) {
+    console.warn('WARNING: ADMIN_PASSWORD is not set — using demo password "admin123". Set it before going live.');
+  }
 });
 
 function shutdown() {

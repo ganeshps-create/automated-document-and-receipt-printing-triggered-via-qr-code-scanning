@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shop Admin — QR Se Print</title>
+<link rel="stylesheet" href="/css/styles.css">
+<link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin-body">
+<div class="admin-wrap">
+
+  <div class="admin-head">
+    <div class="admin-head-tx">
+      <div class="admin-logo">🖨️</div>
+      <div>
+        <h1>Shop Admin</h1>
+        <p id="adminShopName">QR Se Print · Print Queue</p>
+      </div>
+    </div>
+    <button class="admin-logout" id="adminLogoutBtn" onclick="adminLogout()" style="display:none;">Logout</button>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="card admin-login" id="adminLogin">
+    <div style="font-size:40px;text-align:center;line-height:1;">🔐</div>
+    <h2 style="text-align:center;margin:8px 0 6px;">Shop Login</h2>
+    <p style="text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:16px;">Orders aur print queue dekhne ke liye password daalo.</p>
+    <input type="password" class="range-input" id="adminPw" placeholder="Admin password" autocomplete="current-password" onkeydown="if(event.key==='Enter')adminLoginSubmit()" style="margin-bottom:10px;">
+    <div id="adminLoginErr" class="pw-err hidden"></div>
+    <button class="btn-primary" onclick="adminLoginSubmit()">🔓 Login</button>
+    <p class="admin-hint">Customer site: <a href="/print/SHOP_DA35DAB7">/print/SHOP_DA35DAB7</a></p>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="toast" id="toast"></div>
+
+  <div id="adminApp" class="hidden">
+    <div class="admin-stats" id="adminStats"></div>
+
+    <div class="admin-toolbar">
+      <div class="admin-filters" id="adminFilters">
+        <button class="chip on" data-f="all" onclick="setAdminFilter('all')">Sab</button>
+        <button class="chip" data-f="paid" onclick="setAdminFilter('paid')">Paid</button>
+        <button class="chip" data-f="counter_pending" onclick="setAdminFilter('counter_pending')">Counter</button>
+        <button class="chip" data-f="upi_pending" onclick="setAdminFilter('upi_pending')">UPI</button>
+        <button class="chip" data-f="printed" onclick="setAdminFilter('printed')">Printed</button>
+      </div>
+      <button class="admin-refresh" onclick="loadAdminJobs()">🔄 Refresh</button>
+    </div>
+
+    <div id="adminJobs"></div>
+    <p class="admin-foot">Auto-refresh har 15 second me hota hai · Printing browser ke print dialog se hoti hai</p>
+  </div>
+
+</div>
+<script src="/js/state.js"></script>
+<script src="/js/admin.js"></script>
+</body>
+</html>

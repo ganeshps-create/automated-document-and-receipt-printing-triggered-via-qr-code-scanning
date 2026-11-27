@@ -51,6 +51,7 @@ const MIME = {
 function serveStatic(req, res, rootDir, urlPath) {
   let rel = decodeURIComponent(urlPath.split('?')[0]);
   if (rel === '/' || rel === '') rel = '/index.html';
+  if (rel === '/admin' || rel === '/admin/') rel = '/admin.html';
   // SPA fallback for /print/<shopId> and other client-side routes
   if (!path.extname(rel)) rel = '/index.html';
   const file = path.resolve(rootDir, '.' + rel);
@@ -84,6 +85,13 @@ function hmac(secret, data, encoding) {
   return crypto.createHmac('sha256', secret).update(data).digest(encoding || 'hex');
 }
 
+function safeEqual(a, b) {
+  const A = Buffer.from(String(a || ''));
+  const B = Buffer.from(String(b || ''));
+  if (A.length !== B.length) return false;
+  return crypto.timingSafeEqual(A, B);
+}
+
 function randomId(prefix) {
   return (prefix || '') + crypto.randomBytes(10).toString('hex');
 }
@@ -92,4 +100,4 @@ function money(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
-module.exports = { sendJson, readBody, readJson, serveStatic, safeName, hmac, randomId, money, MIME };
+module.exports = { sendJson, readBody, readJson, serveStatic, safeName, hmac, safeEqual, randomId, money, MIME };

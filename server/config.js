@@ -84,5 +84,15 @@ module.exports = {
       secret: String(env.CASHFREE_SECRET_KEY || ''),
       api: String(env.CASHFREE_ENV || 'TEST').toUpperCase() === 'PROD' ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg'
     }
+  },
+  upi: {
+    vpa: String(env.UPI_VPA || env.SHOP_UPI || ''),
+    name: String(env.UPI_NAME || env.SHOP_NAME || 'QR Se Print'),
+    enabled: !!(env.UPI_VPA || env.SHOP_UPI)
+  },
+  admin: {
+    password: String(env.ADMIN_PASSWORD || 'admin123'),
+    secret: String(env.ADMIN_SECRET || env.UPLOAD_SECRET || 'qsp-local-upload-secret') + ':admin',
+    defaultPassword: !env.ADMIN_PASSWORD
   }
 };

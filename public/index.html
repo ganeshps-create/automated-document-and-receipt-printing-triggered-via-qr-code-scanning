@@ -270,6 +270,11 @@
           <span class="pm-art" aria-hidden="true">⚡</span>
           <span class="pm-tx"><b>Online Pay</b><small>Abhi pay karo, turant print</small></span>
         </button>
+        <button type="button" class="pay-m pay-m-wide" id="pmUpi" onclick="selectPayMethod('upi')">
+          <span class="pm-radio" aria-hidden="true"></span>
+          <span class="pm-art" aria-hidden="true">📱</span>
+          <span class="pm-tx"><b>UPI Scan &amp; Pay</b><small>QR scan karo — kisi bhi UPI app se pay karo</small></span>
+        </button>
       </div>
       <div class="pay-note" id="payNote">Loading...</div>
     </div>
@@ -278,6 +283,30 @@
       <button class="btn btn-green pay-confirm" id="payConfirmBtn" onclick="confirmAndPay()">
         <span class="pc-tx">💳 Confirm karke Pay</span> <span class="pc-amt" id="payConfirmAmt"></span>
       </button>
+    </div>
+  </div>
+
+  <!-- UPI SCAN & PAY -->
+  <div id="secUpi" class="hidden">
+    <div class="card pay-card">
+      <div style="text-align:center;margin-bottom:12px;">
+        <div style="font-size:34px;line-height:1;">📱</div>
+        <h3 style="margin:6px 0 4px;">UPI se Pay karo</h3>
+        <p style="font-size:12.5px;color:var(--muted);line-height:1.6;">QR scan karo aur amount pay karo. Payment baad me shop verify karega.</p>
+      </div>
+      <div class="ordno-box" style="margin:0 auto 14px;">
+        <div class="ordno-lb">Order Number</div>
+        <div class="ordno-num" id="upiOrderNo" style="font-size:32px;">—</div>
+      </div>
+      <div class="upi-qr-wrap"><div id="upiQr"></div></div>
+      <div class="upi-amount-line">Pay karna hai: <b id="upiAmount">₹0</b></div>
+      <div class="upi-vpa-line">UPI ID: <b id="upiVpa">—</b> <button type="button" class="upi-copy" onclick="copyUpiId()">Copy</button></div>
+      <input class="range-input" id="upiUtr" placeholder="UPI Reference / UTR (optional)" maxlength="80" style="margin-top:12px;">
+      <p class="pay-note" id="upiHint"></p>
+      <button class="btn-primary" id="upiPaidBtn" onclick="confirmUpiPaid()" style="margin-top:8px;">✅ Maine Pay Kar Diya</button>
+      <div class="btn-row" style="margin-top:10px;margin-bottom:0;">
+        <button class="btn btn-grey" onclick="backToOptions()">← Payment options</button>
+      </div>
     </div>
   </div>
 
@@ -298,6 +327,10 @@
       <p id="collectMsg">Aapka document print ho raha hai.</p>
     </div>
     <div class="amount-box"><span id="amountLabel">Amount</span><strong id="finalAmount">₹5</strong></div>
+    <div class="upi-pay-row hidden" id="upiSuccessBox">
+      <div class="upi-mini-qr" id="upiSuccessQr"></div>
+      <div class="upi-pay-tx"><b>UPI Scan &amp; Pay</b><span id="upiSuccessVpa">—</span></div>
+    </div>
     <div id="dlBox" style="display:none;margin:16px 0;padding:16px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:14px;text-align:center;">
       <div style="font-size:13.5px;font-weight:800;color:#166534;margin-bottom:4px;">📄 Apna Resume Save Kar Lo</div>
       <div style="font-size:11.5px;color:#3f7a52;margin-bottom:12px;">Aage kabhi kaam aayega — abhi download kar lo</div>
@@ -356,6 +389,7 @@
 <script src="/vendor/pdf.min.js"></script>
 <script src="/vendor/jspdf.umd.min.js"></script>
 <script src="/vendor/razorpay-checkout.js"></script>
+<script src="/vendor/qrcode.min.js"></script>
 <script src="/js/state.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/upload.js"></script>
