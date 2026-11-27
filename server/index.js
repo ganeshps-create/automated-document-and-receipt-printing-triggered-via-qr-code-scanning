@@ -1,0 +1,305 @@
+'use strict';
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const config = require('./config');
+const db = require('./db');
+const payments = require('./payments');
+const { sendJson, readJson, readBody, serveStatic, safeName, hmac, money, randomId } = require('./util');
+
+const MAX_BODY = config.limits.maxTotal + 1024 * 1024;
+
+function publicShop(shop) {
+  return {
+    id: shop.id,
+    name: shop.name,
+    address: shop.address,
+    phone: shop.phone || '',
+    email: shop.email || '',
+    logo: shop.logo || '',
+    price_bw: Number(shop.price_bw) || 0,
+    price_color: Number(shop.price_color) || 0,
+    price_bw_duplex: Number(shop.price_bw_duplex) || Number(shop.price_bw) || 0,
+    price_color_duplex: Number(shop.price_color_duplex) || Number(shop.price_color) || 0,
+    payment_mode: shop.payment_mode || 'both',
+    country: shop.country || 'IN',
+    currency: shop.currency || 'INR'
+  };
+}
+
+function quote(shop, o) {
+  const pages = Math.max(1, Number(o.pages) || 1);
+  const copies = Math.max(1, Math.min(100, Number(o.copies) || 1));
+  const duplex = !!o.duplex;
+  const color = o.colorMode === 'color';
+  let rate = color ? Number(shop.price_color) : Number(shop.price_bw);
+  if (duplex) rate = color ? Number(shop.price_color_duplex) : Number(shop.price_bw_duplex);
+  const perSheet = Math.max(1, Number(o.mini && o.mini.n) || 1);
+  const units = perSheet > 1 ? Math.ceil(pages / perSheet) : pages;
+  return money(rate * units * copies);
+}
+
+function uploadToken(uploadId, shopId, expires) {
+  return hmac(config.uploadSecret, `${uploadId}|${shopId}|${expires}`);
+}
+
+async function handleApi(req, res, url) {
+  const p = url.pathname;
+  const method = req.method;
+
+  if (p === '/api/health' && method === 'GET') {
+    return sendJson(res, 200, { ok: true, provider: config.payment.provider, mode: config.payment.mode });
+  }
+
+  if (p === '/api/config' && method === 'GET') {
+    return sendJson(res, 200, {
+      provider: config.payment.provider,
+      mode: config.payment.mode,
+      razorpayKeyId: config.payment.razorpay.keyId,
+      cashfreeAppId: config.payment.cashfree.appId,
+      maxFile: config.limits.maxFile,
+      maxTotal: config.limits.maxTotal
+    });
+  }
+
+  let m;
+  if ((m = p.match(/^\/api\/shop\/([^/]+)$/)) && method === 'GET') {
+    const shop = db.getTable('shops', decodeURIComponent(m[1]));
+    if (!shop) return sendJson(res, 404, { error: 'Shop not found' });
+    return sendJson(res, 200, publicShop(shop));
+  }
+
+  if (p === '/api/quote' && method === 'POST') {
+    const body = await readJson(req);
+    const shop = db.getTable('shops', body.shopId || config.shopSeed.id) || config.shopSeed;
+    return sendJson(res, 200, { amount: quote(shop, body) });
+  }
+
+  if (p === '/api/upload/sign' && method === 'POST') {
+    const body = await readJson(req);
+    const shopId = String(body.shopId || config.shopSeed.id);
+    const uploadId = randomId('up_');
+    const expires = Date.now() + 30 * 60 * 1000;
+    db.putTable('uploads', uploadId, { shopId, files: [], bytes: 0, expires, created: Date.now() });
+    return sendJson(res, 200, { uploadId, token: uploadToken(uploadId, shopId, expires), expires, maxFile: config.limits.maxFile, maxTotal: config.limits.maxTotal });
+  }
+
+  if (p === '/api/upload' && method === 'PUT') {
+    const token = url.searchParams.get('token') || '';
+    const uploadId = String(req.headers['x-upload-id'] || '');
+    const shopId = String(req.headers['x-shop-id'] || config.shopSeed.id);
+    const rec = db.getTable('uploads', uploadId);
+    if (!rec || rec.expires < Date.now() || !hmac(config.uploadSecret, `${uploadId}|${shopId}|${rec.expires}`) || token !== uploadToken(uploadId, shopId, rec.expires)) {
+      return sendJson(res, 403, { error: 'Upload token invalid or expired' });
+    }
+    const name = safeName(req.headers['x-file-name'] || 'file');
+    const declared = Number(req.headers['x-file-size'] || 0) || 0;
+    if (declared > config.limits.maxFile) return sendJson(res, 413, { error: 'File too large' });
+    if (rec.bytes + declared > config.limits.maxTotal) return sendJson(res, 413, { error: 'Total upload too large' });
+
+    const dir = path.join(config.uploadDir, uploadId);
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, name);
+    let size = 0;
+    const temp = target + '.part';
+    await new Promise((resolve, reject) => {
+      const ws = fs.createWriteStream(temp);
+      req.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > config.limits.maxFile) {
+          reject(Object.assign(new Error('File too large'), { status: 413 }));
+          req.destroy();
+        }
+      });
+      req.on('error', reject);
+      ws.on('error', reject);
+      ws.on('finish', resolve);
+      req.pipe(ws);
+    });
+    fs.renameSync(temp, target);
+    rec.files.push({ name, size, path: path.relative(config.dataDir, target) });
+    rec.bytes += size;
+    db.putTable('uploads', uploadId, rec);
+    return sendJson(res, 200, { ok: true, name, size });
+  }
+
+  if (p === '/api/upload/confirm' && method === 'POST') {
+    const body = await readJson(req);
+    const rec = db.getTable('uploads', String(body.uploadId || ''));
+    if (!rec) return sendJson(res, 404, { error: 'Upload session not found' });
+    const shop = db.getTable('shops', rec.shopId) || config.shopSeed;
+    const amount = quote(shop, body);
+    const jobId = randomId('job_');
+    const orderNo = db.nextOrderNo();
+    const job = {
+      id: jobId,
+      orderNo,
+      shopId: rec.shopId,
+      files: rec.files,
+      pages: Number(body.pages) || 1,
+      copies: Number(body.copies) || 1,
+      colorMode: body.colorMode === 'color' ? 'color' : 'bw',
+      duplex: !!body.duplex,
+      mini: body.mini || null,
+      pageRange: body.pageRange || 'all',
+      amount,
+      status: 'awaiting_payment',
+      created: Date.now()
+    };
+    db.putTable('jobs', jobId, job);
+    return sendJson(res, 200, { jobId, orderNo, amount, status: job.status });
+  }
+
+  if ((m = p.match(/^\/api\/jobs\/([^/]+)\/status$/)) && method === 'GET') {
+    const job = db.getTable('jobs', m[1]);
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    return sendJson(res, 200, { id: job.id, orderNo: job.orderNo, status: job.status, amount: job.amount });
+  }
+
+  if ((m = p.match(/^\/api\/jobs\/([^/]+)\/feedback$/)) && method === 'POST') {
+    const job = db.getTable('jobs', m[1]);
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    const body = await readJson(req);
+    db.pushFeedback({ jobId: job.id, good: !!body.good, comment: String(body.comment || '').slice(0, 500), at: Date.now() });
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (p === '/api/payment/online/create' && method === 'POST') {
+    const body = await readJson(req);
+    const job = db.getTable('jobs', String(body.jobId || ''));
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    if (job.status === 'paid' || job.status === 'counter_pending') return sendJson(res, 400, { error: 'Job already paid' });
+    const provider = config.payment.provider;
+    const receipt = 'job_' + job.id.replace(/[^a-z0-9]/gi, '').slice(0, 20);
+    let result;
+    if (provider === 'razorpay') {
+      result = await payments.razorpayCreate({ amount: job.amount, receipt, notes: { order_no: job.orderNo } });
+    } else if (provider === 'cashfree') {
+      const orderId = 'QSP' + job.orderNo.replace(/\D/g, '') + Date.now().toString().slice(-6);
+      result = await payments.cashfreeCreate({
+        orderId, amount: job.amount,
+        customer: { id: 'cust_' + job.orderNo, name: 'Print Customer', email: String(body.email || 'print@example.com'), phone: String(body.phone || '9999999999') },
+        returnUrl: `${config.publicUrl}/?cf=${encodeURIComponent(orderId)}`
+      });
+    } else {
+      result = { providerOrderId: 'demo_' + job.orderNo, keyId: '', amount: job.amount, currency: 'INR' };
+    }
+    job.paymentProvider = provider;
+    job.providerOrderId = result.providerOrderId;
+    db.putTable('jobs', job.id, job);
+    db.putTable('payments', result.providerOrderId, {
+      jobId: job.id, provider, amount: job.amount, status: 'created', created: Date.now()
+    });
+    return sendJson(res, 200, Object.assign({ provider, mode: config.payment.mode }, result));
+  }
+
+  if (p === '/api/payment/razorpay/verify' && method === 'POST') {
+    const body = await readJson(req);
+    if (!payments.razorpayVerify(body)) return sendJson(res, 400, { error: 'Payment signature verification failed' });
+    const payment = db.getTable('payments', String(body.razorpay_order_id || ''));
+    if (!payment) return sendJson(res, 404, { error: 'Payment order not found' });
+    const job = db.getTable('jobs', payment.jobId);
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    payment.status = 'paid';
+    payment.paymentId = body.razorpay_payment_id;
+    db.putTable('payments', payment.providerOrderId, payment);
+    job.status = 'paid';
+    db.putTable('jobs', job.id, job);
+    return sendJson(res, 200, { ok: true, orderNo: job.orderNo, amount: job.amount, status: 'paid' });
+  }
+
+  if (p === '/api/payment/cashfree/status' && method === 'POST') {
+    const body = await readJson(req);
+    const orderId = String(body.orderId || '');
+    const payment = db.getTable('payments', orderId);
+    if (!payment) return sendJson(res, 404, { error: 'Payment order not found' });
+    const job = db.getTable('jobs', payment.jobId);
+    let status = 'pending';
+    try {
+      const st = await payments.cashfreeStatus(orderId);
+      status = String(st.order_status || '').toUpperCase();
+    } catch (e) {
+      status = String(body.orderStatus || '').toUpperCase();
+    }
+    if (status === 'PAID') {
+      payment.status = 'paid'; db.putTable('payments', orderId, payment);
+      job.status = 'paid'; db.putTable('jobs', job.id, job);
+    }
+    return sendJson(res, 200, { ok: true, status: job.status, orderNo: job.orderNo, amount: job.amount, gatewayStatus: status });
+  }
+
+  if (p === '/api/payment/cashfree/webhook' && method === 'POST') {
+    const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
+    let body; try { body = JSON.parse(raw); } catch (e) { body = {}; }
+    const signature = req.headers['x-cf-signature'] || '';
+    const timestamp = req.headers['x-cf-timestamp'] || '';
+    if (!payments.cashfreeWebhookValid(raw, signature, timestamp)) {
+      return sendJson(res, 401, { error: 'Invalid webhook signature' });
+    }
+    const orderId = String((body.data && body.data.order && body.data.order.order_id) || body.order_id || '');
+    const payment = db.getTable('payments', orderId);
+    if (payment && String(body.data && body.data.order && body.data.order.order_status || '').toUpperCase() === 'PAID') {
+      const job = db.getTable('jobs', payment.jobId);
+      payment.status = 'paid'; db.putTable('payments', orderId, payment);
+      if (job) { job.status = 'paid'; db.putTable('jobs', job.id, job); }
+    }
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (p === '/api/payment/demo/complete' && method === 'POST') {
+    const body = await readJson(req);
+    const orderId = String(body.orderId || '');
+    const payment = db.getTable('payments', orderId);
+    if (!payment) return sendJson(res, 404, { error: 'Payment order not found' });
+    const job = db.getTable('jobs', payment.jobId);
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    payment.status = 'paid'; db.putTable('payments', orderId, payment);
+    job.status = 'paid'; db.putTable('jobs', job.id, job);
+    return sendJson(res, 200, { ok: true, orderNo: job.orderNo, amount: job.amount, status: 'paid' });
+  }
+
+  if (p === '/api/payment/counter' && method === 'POST') {
+    const body = await readJson(req);
+    const job = db.getTable('jobs', String(body.jobId || ''));
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    job.status = 'counter_pending';
+    db.putTable('jobs', job.id, job);
+    db.putTable('payments', 'counter_' + job.id, { jobId: job.id, provider: 'counter', amount: job.amount, status: 'pending', created: Date.now() });
+    return sendJson(res, 200, { ok: true, orderNo: job.orderNo, amount: job.amount, status: job.status });
+  }
+
+  return sendJson(res, 404, { error: 'Not found' });
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
+    if (methodAllowsBody(req.method)) {
+      // Drain unexpected bodies on non-API requests so the connection stays clean.
+      req.resume();
+    }
+    return serveStatic(req, res, config.publicDir, url.pathname);
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) console.error('[server]', err);
+    if (!res.headersSent) return sendJson(res, status, { error: err.message || 'Server error' });
+    res.end();
+  }
+});
+
+function methodAllowsBody(m) { return m === 'POST' || m === 'PUT' || m === 'PATCH'; }
+
+server.listen(config.port, () => {
+  console.log(`QR Se Print replica running at ${config.publicUrl}`);
+  console.log(`Payment provider: ${config.payment.provider} (${config.payment.mode})`);
+});
+
+function shutdown() {
+  console.log('Shutting down gracefully…');
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 10000).unref();
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

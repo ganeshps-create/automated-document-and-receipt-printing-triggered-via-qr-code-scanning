@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: qr-se-print
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    disk:
+      name: qsp-uploads
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: DATA_DIR
+        value: /app/data
+      - key: PAYMENT_PROVIDER
+        value: demo
+      - key: SHOP_NAME
+        value: QR Se Print
+      - key: PRICE_BW
+        value: 5
+      - key: PRICE_COLOR
+        value: 10
+      - key: UPLOAD_SECRET
+        generateValue: true
+      # When ready for real payments, replace PAYMENT_PROVIDER and add:
+      # RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET (or CASHFREE_APP_ID / CASHFREE_SECRET_KEY)

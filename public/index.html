@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>QR Se Print</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="shop-header">
+    <div class="shop-icon" id="shopIconBox">🖨️</div>
+    <div class="shop-info">
+      <h2 id="shopName">Loading...</h2>
+      <p id="shopAddr"></p>
+      <div class="price-badges">
+        <span class="price-badge" id="priceBWBadge">B&W: ₹-/page</span>
+        <span class="price-badge color" id="priceColorBadge">Color: ₹-/page</span>
+      </div>
+    </div>
+    <button type="button" class="shop-infobtn" onclick="openShopInfo()">ⓘ Shop Info</button>
+  </div>
+  <div id="shopInfoModal" onclick="if(event.target===this)closeShopInfo()"><div class="si-box" id="shopInfoBox"></div></div>
+
+  <div class="steps">
+    <div class="step active" id="s1"><div class="dot">1</div><div class="step-lbl">Upload</div></div>
+    <div class="step" id="s2"><div class="dot">2</div><div class="step-lbl">Edit</div></div>
+    <div class="step" id="s3"><div class="dot">3</div><div class="step-lbl">Preview</div></div>
+    <div class="step" id="s4"><div class="dot">4</div><div class="step-lbl">Pay</div></div>
+  </div>
+
+  <!-- STEP 1: Upload -->
+  <div id="secUpload">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt" multiple onchange="handleFileUpload(this)">
+      <div class="upload-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6.2 18.5h11a4.2 4.2 0 0 0 .5-8.37 6 6 0 0 0-11.65-1.2A3.9 3.9 0 0 0 6.2 18.5Z"/>
+          <path d="M12 15.4V9.6"/><path d="M9.4 12 12 9.4l2.6 2.6"/>
+        </svg>
+      </div>
+      <h3>Document Upload Karo</h3>
+      <p>PDF, JPG, PNG — sab supported<br><b>📚 Ek saath kai files select kar sakte ho</b> — sab ek hi order me print hongi</p>
+      <div class="ftypes">
+        <span class="ft">PDF</span><span class="ft">JPG</span><span class="ft">PNG</span><span class="ft">🔒 Password PDF</span>
+      </div>
+      <div class="upbtn-wrap">
+        <p class="upbtn-hint">👆 Tap karo ya file yahan drag karke chhod do</p>
+        <div class="or-line">or</div>
+        <span class="upbtn">Choose Files</span>
+      </div>
+      <p class="safe-line">🔒 Aapki files safe aur private hain</p>
+    </div>
+    <div id="svcMenu" aria-label="Print services"></div>
+    <div class="trust-row">
+      <div class="trust-item"><div class="ti">🛡️</div><b>Secure &amp; Safe</b><span>Files 100% safe hain</span></div>
+      <div class="trust-item"><div class="ti">⚡</div><b>Fast Printing</b><span>Turant aur bharosemand</span></div>
+      <div class="trust-item"><div class="ti">🏅</div><b>Best Quality</b><span>Saaf aur sharp print</span></div>
+    </div>
+  </div>
+
+  <div id="dsigBanner" class="dsig-banner hidden" role="status" aria-live="polite"></div>
+
+  <!-- Choice -->
+  <div id="secChoice" class="hidden">
+    <div class="card">
+      <h2 style="margin-bottom:4px;">👀 File Mil Gayi</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;" id="choiceSub">—</p>
+      <div id="choiceThumb" style="background:#f8f7fc;border:1.5px solid var(--line);border-radius:16px;padding:14px;display:flex;justify-content:center;margin-bottom:16px;">
+        <canvas id="choiceCanvas" style="max-width:100%;max-height:340px;border-radius:9px;box-shadow:0 6px 20px rgba(0,0,0,.10);"></canvas>
+      </div>
+      <button onclick="chooseAllGood()" style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:15px;padding:17px;font-family:inherit;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 8px 22px rgba(22,163,74,.26);margin-bottom:10px;">
+        ✅ Sab Theek Hai — Aage Bado
+      </button>
+      <p style="font-size:11.5px;color:var(--muted);text-align:center;margin-bottom:16px;line-height:1.6;">
+        File jaisi hai waisi hi print hogi — sabse saaf aur sabse tez
+      </p>
+      <button onclick="chooseEdit()" style="width:100%;background:#fff;color:var(--ink);border:1.5px solid var(--line);border-radius:15px;padding:15px;font-family:inherit;font-weight:700;font-size:15px;cursor:pointer;">
+        ✏️ Edit Karna Hai
+      </button>
+      <p style="font-size:11.5px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.6;">
+        Ghumana, kaatna, ujaala-gehra, ya aur document jodna ho to
+      </p>
+    </div>
+  </div>
+
+  <!-- STEP 2: Editor -->
+  <div id="secEditor" class="hidden">
+    <div class="card">
+      <h3>📋 Document Adjust Karo</h3>
+      <div id="serviceBadge" style="display:none;margin:6px 0 2px;"><span id="serviceBadgeTxt" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:800;font-size:13px;padding:6px 14px;border-radius:999px;"></span></div>
+      <p style="font-size:12px;color:#7a7a8c;margin-bottom:10px;">Drag karke move karo, corner se size badlo/chhota karo</p>
+      <div class="a4-canvas-wrap"><div class="a4-canvas" id="a4Canvas"></div></div>
+      <div class="page-indicator-row">
+        <button class="page-nav-btn hidden-btn" id="editorPrevBtn" onclick="changeEditorPage(-1)">‹</button>
+        <p class="page-indicator" id="pageIndicator">Showing Page 1 of 1 Pages</p>
+        <button class="page-nav-btn hidden-btn" id="editorNextBtn" onclick="changeEditorPage(1)">›</button>
+      </div>
+      <button class="add-doc-btn" onclick="triggerAddDocument()">➕ Add Document (Back Side, etc.)</button>
+      <input type="file" id="addDocInput" accept=".pdf,.jpg,.jpeg,.png,.webp,.txt" multiple class="hidden" onchange="handleAddDocument(this)">
+      <div class="edit-toolbar">
+        <select class="edit-btn" id="paperSizeSel" onchange="changePaperSize()" style="appearance:auto;">
+          <option value="4x6">📷 4×6 Photo</option>
+          <option value="a4" selected>📄 A4</option>
+          <option value="a5">📄 A5</option>
+          <option value="letter">📄 Letter</option>
+          <option value="legal">📄 Legal</option>
+          <option value="a3">📄 A3</option>
+          <option value="a2">📄 A2</option>
+          <option value="a1">📄 A1</option>
+        </select>
+        <button class="edit-btn" id="orientBtn" onclick="toggleOrientation()">📄 Portrait</button>
+        <span id="zoomWrap" style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1.5px solid #e8e6f0;border-radius:12px;padding:6px 10px;">🔍<input type="range" id="zoomSlider" min="0" max="100" value="26" oninput="zoomSliderInput(this.value)" style="width:110px;accent-color:#7c3aed;"></span>
+        <button class="edit-btn" onclick="toolAutoA4()">🤖 Auto Fit</button>
+        <button class="edit-btn" id="rotateBtn" onclick="toolToggleRotate()">🔄 Rotate</button>
+        <button class="edit-btn" id="adjustBtn" onclick="toolToggleAdjust()">🎨 Brightness/Contrast</button>
+        <button class="edit-btn" onclick="toolPerspectiveCrop()">📐 Perspective Crop</button>
+        <button class="edit-btn" id="borderBtn" onclick="toolToggleBorder()">⬛ Photo Border</button>
+        <button class="edit-btn" id="cutBtn" onclick="toggleCutLines()">✂️ Cutting Line: Off</button>
+      </div>
+      <div id="borderPanel" class="adjust-panel hidden">
+        <div class="adjust-row"><label>⬛ Black Border</label><button class="edit-btn" id="borderToggleBtn" onclick="toggleBorderOn()">Band hai</button></div>
+        <div class="adjust-row"><label>📏 Motai</label><input type="range" id="borderSlider" min="1" max="20" value="4" oninput="onBorderSlider()"><span id="borderVal">4</span></div>
+        <p style="font-size:11px;color:var(--muted);margin:2px 4px 0;line-height:1.6;">Sheet ki <b>har photo</b> ke chaaron taraf border lagega — kaatne me aasani hoti hai</p>
+      </div>
+      <div id="rotatePanel" class="adjust-panel hidden">
+        <div class="adjust-row"><label>🎛️ Free Rotate</label><input type="range" id="rotSlider" min="-180" max="180" value="0" oninput="onRotateSlider()"><span id="rotVal">0°</span></div>
+        <div class="adjust-row" style="justify-content:center;gap:8px;flex-wrap:wrap;">
+          <button class="edit-btn" onclick="nudgeRotation(-90)">↺ Left 90°</button>
+          <button class="edit-btn" onclick="nudgeRotation(90)">↻ Right 90°</button>
+          <button class="edit-btn" onclick="nudgeRotation(180)">🔃 180°</button>
+        </div>
+        <button class="edit-btn" style="width:100%;background:#f0ebe3;" onclick="resetRotation()">↺ Seedha Karo (0°)</button>
+      </div>
+      <div id="adjustPanel" class="adjust-panel hidden">
+        <div class="adjust-row"><label>☀️ Brightness</label><input type="range" id="adjBrightness" min="-100" max="100" value="0" oninput="applyAdjustments()"><span id="adjBrightnessVal">0</span></div>
+        <div class="adjust-row"><label>🎨 Contrast</label><input type="range" id="adjContrast" min="-100" max="100" value="0" oninput="applyAdjustments()"><span id="adjContrastVal">0</span></div>
+        <button class="edit-btn" style="width:100%;background:#f0ebe3;" onclick="resetAdjustments()">↺ Reset</button>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-grey" onclick="backToUpload()">← Back</button>
+      <button class="btn btn-green" onclick="goToPreview()">✅ Thik Hai, Aage Bado</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: Preview + Options -->
+  <div id="secPreviewStep" class="hidden">
+    <div class="card pv-card">
+      <div class="pv-head"><h3>👀 Print Preview aur Options</h3><span class="pv-pill" id="pvPagesPill">1 Page</span></div>
+      <div class="pv-grid">
+        <div class="pv-left">
+          <div class="final-preview-wrap"><img id="finalPreviewImg" alt="preview"></div>
+          <div class="page-nav" id="previewPageNav" style="display:none;">
+            <button class="page-nav-btn" id="prevPgBtn" onclick="changePreviewPage(-1)">‹</button>
+            <span class="page-info">Page <span id="curPgNum">1</span> / <span id="totalPgNum">1</span></span>
+            <button class="page-nav-btn" id="nextPgBtn" onclick="changePreviewPage(1)">›</button>
+          </div>
+        </div>
+        <div class="pv-right">
+          <div class="page-range-box pv-box" id="pageRangeBox" style="display:none;">
+            <label>📄 Kaunse Pages Print Karne Hain?</label>
+            <div class="range-toggle">
+              <button class="tog-btn on" id="rangeAllBtn" onclick="setPageRangeMode('all')">Sab Pages</button>
+              <button class="tog-btn" id="rangeCustomBtn" onclick="setPageRangeMode('custom')">Specific Pages</button>
+            </div>
+            <input type="text" class="range-input hidden" id="rangeInput" placeholder="jaise: 1,3,5-7" oninput="updateRangeFromInput()">
+            <div class="range-hint">Total <span id="rangeTotalPages">1</span> pages hain</div>
+          </div>
+          <div class="pv-box">
+            <div class="pv-box-h">⚙️ Print ka Type</div>
+            <div class="opt-toggle pv-types">
+              <div class="opt-card sel" id="optBW" onclick="setColorMode('bw')">
+                <span class="pv-radio" aria-hidden="true"></span>
+                <div class="ic">⬛</div><div class="lbl">Black &amp; White</div><div class="pr" id="optBWPrice">₹-/page</div>
+              </div>
+              <div class="opt-card" id="optColor" onclick="setColorMode('color')">
+                <span class="pv-radio" aria-hidden="true"></span>
+                <div class="ic">🌈</div><div class="lbl">Color</div><div class="pr" id="optColorPrice">₹-/page</div>
+              </div>
+            </div>
+          </div>
+          <div id="duplexRow">
+            <div class="opt-card pv-box pv-duplex" id="optDuplex" onclick="toggleDuplex()" role="switch">
+              <div class="ic">📄</div>
+              <div class="pv-dup-tx"><div class="lbl">Dual-Side (Duplex) Print</div><div class="pr" id="duplexNote">Dono side print hoga</div></div>
+              <span class="pv-switch" aria-hidden="true"><i></i></span>
+            </div>
+            <p id="duplexCopyNote" style="display:none;font-size:11px;color:#c2410c;margin:6px 0 0;">✋ Manual duplex mein copies 1 hi rahegi</p>
+          </div>
+          <button class="edit-btn" id="miniEntryBtn" onclick="goToMini()" style="width:100%;">🗒️ Mini Print — page bachao</button>
+        </div>
+      </div>
+    </div>
+    <div id="upProgWrap" style="display:none;margin:14px 0 4px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+        <span id="upProgLabel" style="font-weight:800;font-size:14px;">📤 File Upload Ho Rahi Hai…</span>
+        <span id="upProgPct" style="font-weight:700;font-size:16px;color:#7c3aed;">0%</span>
+      </div>
+      <div style="height:10px;background:#eceaf4;border-radius:99px;overflow:hidden;">
+        <div id="upProgBar" style="height:100%;width:0%;border-radius:99px;background:linear-gradient(90deg,#7c3aed,#ec2a7a);transition:width .25s ease;"></div>
+      </div>
+      <div id="upProgHint" style="font-size:11.5px;color:var(--muted);margin-top:7px;">Ruko, band mat karo</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-grey" onclick="backToEditor()">← Back</button>
+      <button class="btn btn-green" onclick="goToOptions()">✅ Aage Bado</button>
+    </div>
+  </div>
+
+  <!-- Mini Print -->
+  <div id="secMini" class="hidden">
+    <div class="card">
+      <h3>🗒️ Mini Print</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">Ek A4 page par kai pages — kagaz aur paisa dono bachta hai.</p>
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:8px">Ek sheet par kitne pages?</label>
+      <div class="mini-grid" id="miniOpts"></div>
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:8px">Sheet ka rukh</label>
+      <div class="mini-orient" id="miniOrient">
+        <button class="mini-ori" id="miniOriP" onclick="setMiniOrient('portrait')">📄 Portrait</button>
+        <button class="mini-ori" id="miniOriL" onclick="setMiniOrient('landscape')">📃 Landscape</button>
+      </div>
+      <div class="mini-ori-hint" id="miniOriHint">Apne aap chuna — jisme page sabse bade aayein</div>
+      <div class="mini-border-row">
+        <div><b>Page ka border</b><span>Har chhote page ke chaaro taraf patli line</span></div>
+        <button class="mini-switch on" id="miniBorderBtn" onclick="toggleMiniBorder()" aria-label="Border on/off"><i></i></button>
+      </div>
+      <div class="mini-sum" id="miniSummary"></div>
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--ink-2);margin:16px 0 8px">Live Preview</label>
+      <div class="mini-preview" id="miniPreview"><div class="mini-loading">Preview ban raha hai…</div></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-grey" onclick="miniBack()">← Back</button>
+      <button class="btn btn-green" id="miniNextBtn" onclick="miniConfirm()">Aage Bado →</button>
+    </div>
+  </div>
+  <div id="secOptions" class="hidden"></div>
+
+  <!-- STEP 4: Payment -->
+  <div id="secPayment" class="hidden">
+    <div class="card pay-card">
+      <h3>💳 Payment Karo</h3>
+      <div class="copies-row pay-copies">
+        <span class="lbl">📑 Copies</span>
+        <div class="copies-ctrl">
+          <button onclick="changeCopies(-1)" aria-label="minus">−</button>
+          <span id="copiesNum">1</span>
+          <button onclick="changeCopies(1)" aria-label="plus">+</button>
+        </div>
+      </div>
+      <p id="copiesCapNote" style="display:none;font-size:11px;color:#c2410c;margin:6px 0 0;"></p>
+      <div class="price-summary pay-sum">
+        <div class="price-row"><span id="sumType">B&W Print</span><span id="sumPerPage">₹0/page</span></div>
+        <div class="price-row"><span id="sumPages">1 page × 1 copy</span><span id="sumPagesAmt">₹0</span></div>
+        <div class="price-total"><span>Total</span><strong id="sumTotal">₹0</strong></div>
+      </div>
+      <div class="pay-h">💳 Payment ka Tareeka</div>
+      <div class="pay-methods" id="payMethods">
+        <button type="button" class="pay-m" id="pmCounter" onclick="selectPayMethod('counter')">
+          <span class="pm-radio" aria-hidden="true"></span>
+          <span class="pm-art" aria-hidden="true">🐢</span>
+          <span class="pm-tx"><b>Counter par Pay</b><small>Seedha shop par paise do</small></span>
+        </button>
+        <button type="button" class="pay-m" id="pmOnline" onclick="selectPayMethod('online')">
+          <span class="pm-radio" aria-hidden="true"></span>
+          <span class="pm-art" aria-hidden="true">⚡</span>
+          <span class="pm-tx"><b>Online Pay</b><small>Abhi pay karo, turant print</small></span>
+        </button>
+      </div>
+      <div class="pay-note" id="payNote">Loading...</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-grey" onclick="backToOptions()">← Back</button>
+      <button class="btn btn-green pay-confirm" id="payConfirmBtn" onclick="confirmAndPay()">
+        <span class="pc-tx">💳 Confirm karke Pay</span> <span class="pc-amt" id="payConfirmAmt"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- SUCCESS -->
+  <div class="success-screen" id="secSuccess">
+    <div class="thank-you-emoji">🎉</div>
+    <h2 class="thank-you-text">Thank You!</h2>
+    <div class="sicon" id="successIcon">✓</div>
+    <h2 id="successTitle">Print Shuru!</h2>
+    <div class="order-id" id="orderId">ORDER #...</div>
+    <div class="ordno-box" id="ordNoBox" style="display:none">
+      <div class="ordno-lb">Aapka Order Number</div>
+      <div class="ordno-num" id="ordNoNum"></div>
+      <div class="ordno-hint">Ye number yaad rakho — shop par poochne par bata dena</div>
+    </div>
+    <div class="collect-box" id="collectBox">
+      <h3 id="collectTitle">🖨️ Print Ho Raha Hai!</h3>
+      <p id="collectMsg">Aapka document print ho raha hai.</p>
+    </div>
+    <div class="amount-box"><span id="amountLabel">Amount</span><strong id="finalAmount">₹5</strong></div>
+    <div id="dlBox" style="display:none;margin:16px 0;padding:16px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:14px;text-align:center;">
+      <div style="font-size:13.5px;font-weight:800;color:#166534;margin-bottom:4px;">📄 Apna Resume Save Kar Lo</div>
+      <div style="font-size:11.5px;color:#3f7a52;margin-bottom:12px;">Aage kabhi kaam aayega — abhi download kar lo</div>
+      <button onclick="downloadMyPdf()" style="width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:14px;font-family:inherit;font-weight:800;font-size:15px;cursor:pointer;">⬇️ PDF Download Karo</button>
+    </div>
+    <div id="fbBox" style="text-align:center;margin:16px 0;padding:14px;background:#f8f7fc;border-radius:14px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Print kaisa laga?</div>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button onclick="sendFeedback(true)" style="background:#dcfce7;border:1.5px solid #86efac;border-radius:14px;padding:12px 22px;font-size:24px;cursor:pointer;">👍</button>
+        <button onclick="sendFeedback(false)" style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:14px;padding:12px 22px;font-size:24px;cursor:pointer;">👎</button>
+      </div>
+      <div id="fbThanks" style="display:none;font-size:13px;color:#16a34a;font-weight:700;margin-top:8px;">🙏 Shukriya!</div>
+    </div>
+    <button class="btn-primary" onclick="location.reload()">Naya Print Karo</button>
+  </div>
+
+  <div class="footer">
+    <p style="font-weight:700;color:#7a7a8c;">⚡ Powered by <b id="poweredByName">QR Se Print</b></p>
+    <p style="font-size:10px;color:#9a9aab;" id="footerLegal">© 2026 QR Se Print · All Rights Reserved<br>Developed by Rupesh Kumar Mahato</p>
+  </div>
+</div>
+
+<!-- Perspective Crop -->
+<div class="crop-overlay hidden" id="cropOverlay">
+  <div class="crop-header">
+    <div class="crop-title">📐 Perspective Crop</div>
+    <div class="crop-sub">4 corners ko document ke corners par drag karo — tirchha photo bhi seedha ho jayega</div>
+  </div>
+  <div class="crop-stage" id="cropStage"><canvas id="cropCanvas"></canvas></div>
+  <div class="crop-toolbar">
+    <button class="crop-btn grey" onclick="cropCancel()">✕ Cancel</button>
+    <button class="crop-btn grey" onclick="cropFullPhoto()">↺ Full Photo</button>
+    <button class="crop-btn primary" onclick="cropApply()">✂️ Crop</button>
+  </div>
+</div>
+
+<!-- Password PDF -->
+<div class="pw-overlay hidden" id="pwOverlay">
+  <div class="pw-box">
+    <div class="pw-lock">&#128274;</div>
+    <h3>Ye PDF Password Se Locked Hai</h3>
+    <p class="pw-sub"><span class="pw-file" id="pwFileName">document.pdf</span><br>Kholne ke liye password daalo</p>
+    <div class="pw-err hidden" id="pwErr"></div>
+    <div class="pw-field">
+      <input type="password" id="pwInput" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="PDF ka password" onkeydown="onPwKeyDown(event)">
+      <button type="button" class="pw-eye" id="pwEye" onclick="togglePwVisible()" aria-label="Password dikhao">&#128065;&#65039;</button>
+    </div>
+    <button type="button" class="pw-go" onclick="submitPdfPassword()">&#128275; PDF Kholo</button>
+    <button type="button" class="pw-cancel" onclick="cancelPdfPassword()">Cancel</button>
+    <p class="pw-note">Password sirf aapke phone me use hota hai — kahin save ya send nahi hota</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/vendor/pdf.min.js"></script>
+<script src="/vendor/jspdf.umd.min.js"></script>
+<script src="/vendor/razorpay-checkout.js"></script>
+<script src="/js/state.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/upload.js"></script>
+<script src="/js/editor.js"></script>
+<script src="/js/preview.js"></script>
+<script src="/js/checkout.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
