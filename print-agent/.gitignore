@@ -1,0 +1,5 @@
+agent-config.json
+agent-state.json
+agent.log
+spool/
+.env

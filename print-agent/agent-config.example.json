@@ -1,0 +1,12 @@
+{
+  "serverUrl": "https://qr-se-print-production-eae42bc7.up.railway.app",
+  "agentKey": "PASTE_PRINT_AGENT_KEY_HERE",
+  "printer": "EPSON L6360 Series",
+  "sumatraPath": "C:\\Users\\<YOU>\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe",
+  "statuses": ["paid"],
+  "pollMs": 5000,
+  "markPrinted": true,
+  "statePath": "./agent-state.json",
+  "spoolDir": "./spool",
+  "logPath": "./agent.log"
+}

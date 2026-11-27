@@ -94,5 +94,14 @@ module.exports = {
     password: String(env.ADMIN_PASSWORD || 'admin123'),
     secret: String(env.ADMIN_SECRET || env.UPLOAD_SECRET || 'qsp-local-upload-secret') + ':admin',
     defaultPassword: !env.ADMIN_PASSWORD
+  },
+  printAgent: {
+    key: String(env.PRINT_AGENT_KEY || ''),
+    printer: String(env.PRINT_AGENT_PRINTER || ''),
+    sumatraPath: String(env.PRINT_AGENT_SUMATRA || ''),
+    pollMs: num(env.PRINT_AGENT_POLL_MS, 5000),
+    autoStatuses: String(env.PRINT_AGENT_AUTOPRINT_STATUSES || 'paid')
+      .split(/[,\s]+/).map((s) => s.trim()).filter(Boolean),
+    enabled: !!env.PRINT_AGENT_KEY
   }
 };

@@ -67,12 +67,47 @@ function verifyAdmin(req) {
   return safeEqual(parts[1], hmac(config.admin.secret, parts[0]));
 }
 
+function verifyPrintAgent(req) {
+  const key = config.printAgent.key;
+  if (!key) return false;
+  const header = String(req.headers.authorization || '');
+  const m = header.match(/^Bearer\s+(.+)$/i);
+  const token = m ? m[1] : String(req.headers['x-print-agent-key'] || '');
+  return !!token && safeEqual(token, key);
+}
+
+function printAgentJob(job) {
+  return {
+    id: job.id,
+    jobId: job.id,
+    orderNo: job.orderNo,
+    status: job.status,
+    amount: job.amount,
+    pages: job.pages,
+    copies: job.copies,
+    colorMode: job.colorMode,
+    duplex: job.duplex,
+    mini: job.mini || null,
+    pageRange: job.pageRange || 'all',
+    created: job.created || 0,
+    file: job.files && job.files[0] ? {
+      name: job.files[0].name,
+      size: job.files[0].size,
+      path: `/api/agent/jobs/${job.id}/file`
+    } : null
+  };
+}
+
 async function handleApi(req, res, url) {
   const p = url.pathname;
   const method = req.method;
 
   if (p.startsWith('/api/admin/') && p !== '/api/admin/login' && !verifyAdmin(req)) {
     return sendJson(res, 401, { error: 'Admin login required' });
+  }
+
+  if (p.startsWith('/api/agent/') && !verifyPrintAgent(req)) {
+    return sendJson(res, 401, { error: 'Print agent key invalid' });
   }
 
   if (p === '/api/health' && method === 'GET') {
@@ -378,6 +413,69 @@ async function handleApi(req, res, url) {
     if (!allowed.includes(status)) return sendJson(res, 400, { error: 'Invalid status' });
     job.status = status;
     job.updated = Date.now();
+    if (status === 'printed') job.printedAt = Date.now();
+    db.putTable('jobs', job.id, job);
+    const payment = db.getTable('payments', 'upi_' + job.id);
+    if (payment && (status === 'paid' || status === 'printed')) {
+      payment.status = 'paid';
+      db.putTable('payments', 'upi_' + job.id, payment);
+    }
+    return sendJson(res, 200, { ok: true, status: job.status });
+  }
+
+  /* ── Local print agent (shop PC): poll jobs, fetch file, mark printed ── */
+  if (p === '/api/agent/config' && method === 'GET') {
+    return sendJson(res, 200, {
+      ok: true,
+      shopName: config.shopSeed.name,
+      autoStatuses: config.printAgent.autoStatuses,
+      pollMs: config.printAgent.pollMs
+    });
+  }
+
+  if (p === '/api/agent/jobs' && method === 'GET') {
+    const status = String(url.searchParams.get('status') || 'paid');
+    const statuses = status === 'all'
+      ? ['paid', 'counter_pending', 'upi_pending']
+      : status.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    const jobs = Object.values(db.get().jobs)
+      .filter((j) => statuses.includes(j.status))
+      .sort((a, b) => (Number(a.created) || 0) - (Number(b.created) || 0))
+      .map(printAgentJob);
+    return sendJson(res, 200, { jobs });
+  }
+
+  if ((am = p.match(/^\/api\/agent\/jobs\/([^/]+)\/file$/)) && method === 'GET') {
+    const job = db.getTable('jobs', am[1]);
+    if (!job || !job.files || !job.files.length) return sendJson(res, 404, { error: 'File nahi mila' });
+    const rel = String(job.files[0].path || '');
+    const root = path.resolve(config.dataDir);
+    const file = path.resolve(root, rel);
+    if (!file.startsWith(root + path.sep)) return sendJson(res, 403, { error: 'Forbidden' });
+    if (!fs.existsSync(file)) return sendJson(res, 404, { error: 'File disk par nahi hai' });
+    const ext = path.extname(file).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Content-Disposition': 'inline; filename="' + safeName(job.files[0].name) + '"',
+      'Cache-Control': 'no-store'
+    });
+    fs.createReadStream(file).pipe(res);
+    return;
+  }
+
+  if ((am = p.match(/^\/api\/agent\/jobs\/([^/]+)\/status$/)) && method === 'POST') {
+    const job = db.getTable('jobs', am[1]);
+    if (!job) return sendJson(res, 404, { error: 'Job not found' });
+    const body = await readJson(req);
+    const allowed = ['paid', 'printed', 'cancelled'];
+    const status = String(body.status || '');
+    if (!allowed.includes(status)) return sendJson(res, 400, { error: 'Invalid status' });
+    job.status = status;
+    job.updated = Date.now();
+    if (status === 'printed') {
+      job.printedAt = Date.now();
+      job.printedBy = 'agent';
+    }
     db.putTable('jobs', job.id, job);
     const payment = db.getTable('payments', 'upi_' + job.id);
     if (payment && (status === 'paid' || status === 'printed')) {
@@ -414,6 +512,9 @@ server.listen(config.port, () => {
   console.log(`Payment provider: ${config.payment.provider} (${config.payment.mode})`);
   if (config.admin.defaultPassword) {
     console.warn('WARNING: ADMIN_PASSWORD is not set — using demo password "admin123". Set it before going live.');
+  }
+  if (!config.printAgent.enabled) {
+    console.warn('INFO: PRINT_AGENT_KEY is not set — local auto-print agent endpoints are disabled.');
   }
 });
 

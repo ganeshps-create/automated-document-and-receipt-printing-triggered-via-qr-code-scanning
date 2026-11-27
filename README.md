@@ -79,6 +79,22 @@ browser's own print dialog: PDFs are embedded in a new window and images are sho
 full width, so the shop's connected/default printer is used. Set a strong
 `ADMIN_PASSWORD` before deploying.
 
+## Automatic printing (Epson L6360 / Windows)
+
+For **automatic printing** (no browser dialog), run the local agent in `print-agent/`
+on the shop PC where the printer is installed. The server cannot directly reach a
+Wi‑Fi/USB printer on the shop network.
+
+1. Set `PRINT_AGENT_KEY` on Railway and redeploy.
+2. Install Epson L6360 driver and SumatraPDF on the shop Windows PC.
+3. Copy `print-agent/agent-config.example.json` to `agent-config.json`, fill server
+   URL, key, and printer name (`EPSON L6360 Series`).
+4. Test: `node agent.js test --config agent-config.json`
+5. Run: `node agent.js run --config agent-config.json`
+
+The agent polls `/api/agent/jobs?status=paid`, downloads the file, prints silently via
+SumatraPDF, and marks the job `printed`. See `print-agent/README.md` for full setup.
+
 ## Deploying (Render / Railway / Fly.io)
 
 The included `Dockerfile` uses the official Node 22 Alpine image. There are no npm
@@ -172,6 +188,10 @@ if you want Scan & Pay. Never commit keys or passwords to the repository.
 | GET | `/api/admin/jobs` | List print queue (admin token) |
 | GET | `/api/admin/jobs/:id/file` | Fetch uploaded file (admin token) |
 | POST | `/api/admin/jobs/:id/status` | Update Paid/Printed/Cancelled (admin token) |
+| GET | `/api/agent/config` | Print agent auth/config check (`PRINT_AGENT_KEY`) |
+| GET | `/api/agent/jobs?status=paid` | Poll printable jobs (agent key) |
+| GET | `/api/agent/jobs/:id/file` | Download job file (agent key) |
+| POST | `/api/agent/jobs/:id/status` | Mark job printed/cancelled (agent key) |
 
 ## Deferred features
 
